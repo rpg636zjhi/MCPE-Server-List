@@ -11,15 +11,107 @@ let filteredServers = [];
 
 // DOM加载完成后执行
 document.addEventListener('DOMContentLoaded', function() {
-    loadServersFromGist();
+    loadServers();
     setupEventListeners();
     fetchGithubUpdateTime();
 });
 
+// 加载服务器数据（从Gist加载，失败时回退到本地文件）
+function loadServers() {
+    // 带时间戳参数防止缓存
+    const timestamp = new Date().getTime();
+    fetch(`https://api.github.com/gists/${GIST_ID}?t=${timestamp}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Gist数据加载失败');
+            }
+            return response.json();
+        })
+        .then(gistData => {
+            // 尝试在 Gist 的文件中找到合适的 JSON 文件（更宽松的匹配规则）
+            const files = gistData.files || {};
+            let serversFile = null;
+            for (const name in files) {
+                const file = files[name];
+                const lname = name.toLowerCase();
+                if (lname.endsWith('.json') || lname === 'servers.json' || lname.includes('server')) {
+                    serversFile = file;
+                    break;
+                }
+            }
+
+            // 如果找到了文件并有内容，优先解析它
+            if (serversFile && serversFile.content) {
+                try {
+                    const parsed = JSON.parse(serversFile.content);
+                    const data = parsed.servers ? parsed : { servers: parsed };
+                    allServers = data.servers || [];
+                    filteredServers = [...allServers];
+                    updateStats({ servers: allServers });
+                    renderServerList();
+                    if (gistData.updated_at) {
+                        document.getElementById('last-update').textContent = formatGithubTime(gistData.updated_at);
+                    }
+                    return;
+                } catch (e) {
+                    console.warn('解析 Gist 文件内容失败，尝试 raw 回退:', e);
+                    // 继续走到 raw 回退逻辑
+                }
+            }
+
+            // 如果没有找到可用的文件，尝试使用 raw URL 回退（使用 GITHUB_USERNAME + GIST_ID + 第一个文件名）
+            const fileNames = Object.keys(files);
+            if (fileNames.length > 0) {
+                const firstName = fileNames[0];
+                const rawUrl = `https://gist.githubusercontent.com/${GITHUB_USERNAME}/${GIST_ID}/raw/${firstName}`;
+                return fetch(rawUrl + '?t=' + timestamp)
+                    .then(r => {
+                        if (!r.ok) throw new Error('raw URL 响应不正常');
+                        return r.json();
+                    })
+                    .then(data => {
+                        const normalized = data.servers ? data : { servers: data };
+                        allServers = normalized.servers || [];
+                        filteredServers = [...allServers];
+                        updateStats({ servers: allServers });
+                        renderServerList();
+                        const now = new Date();
+                        document.getElementById('last-update').textContent = now.toLocaleString('zh-CN') + ' (raw 回退)';
+                        return;
+                    });
+            }
+
+            // 如果无法从 Gist 获得有效内容，则触发 catch 以回退到本地
+            throw new Error('Gist 中未找到可用的服务器数据文件');
+        })
+        .catch(error => {
+            console.error('Gist加载失败，尝试本地文件:', error);
+            // 回退到本地servers.json
+            fetch('servers.json?t=' + timestamp)
+                .then(response => {
+                    if (!response.ok) throw new Error('本地文件也加载失败');
+                    return response.json();
+                })
+                .then(data => {
+                    allServers = data.servers;
+                    filteredServers = [...allServers];
+                    updateStats(data);
+                    renderServerList();
+                    const now = new Date();
+                    document.getElementById('last-update').textContent = now.toLocaleString('zh-CN') + ' (本地回退)';
+                })
+                .catch(localError => {
+                    console.error('所有加载方式失败:', localError);
+                    document.getElementById('server-list').innerHTML = 
+                        '<div class="error-message">无法加载服务器数据，请稍后再试。</div>';
+                });
+        });
+}
+
 // 从 Gist 加载服务器数据
 function loadServersFromGist() {
     // Gist API URL - 获取 Gist 内容
-    const gistApiUrl = `https://api.github.com/gists/${GIST_ID}`;
+    const gistApiUrl = `https://gist.github.com/rpg636zjhi/${GIST_ID}.js`;
     
     fetch(gistApiUrl)
         .then(response => {
