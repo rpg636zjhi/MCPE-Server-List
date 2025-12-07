@@ -1,6 +1,9 @@
 // GitHub仓库配置
-const GITHUB_USERNAME = "yourusername"; // 替换为你的GitHub用户名
-const GITHUB_REPO = "mc014-server-list"; // 替换为你的仓库名
+const GITHUB_USERNAME = "rpg636zjhi";
+const GITHUB_REPO = "MCPE-Server-List";
+
+// Gist 配置
+const GIST_ID = "ee19f0e5a28fdaeac23326f975d03706";
 
 // 全局变量
 let allServers = [];
@@ -8,34 +11,99 @@ let filteredServers = [];
 
 // DOM加载完成后执行
 document.addEventListener('DOMContentLoaded', function() {
-    loadServers();
+    loadServersFromGist();
     setupEventListeners();
     fetchGithubUpdateTime();
 });
 
-// 加载服务器数据
-function loadServers() {
-    fetch('servers.json')
+// 从 Gist 加载服务器数据
+function loadServersFromGist() {
+    // Gist API URL - 获取 Gist 内容
+    const gistApiUrl = `https://api.github.com/gists/${GIST_ID}`;
+    
+    fetch(gistApiUrl)
         .then(response => {
             if (!response.ok) {
-                throw new Error('网络响应不正常');
+                throw new Error('Gist API响应不正常');
+            }
+            return response.json();
+        })
+        .then(gistData => {
+            // Gist 中可能包含多个文件，我们需要找到包含服务器数据的文件
+            const files = gistData.files;
+            let serverData = null;
+            
+            // 查找包含服务器数据的文件
+            for (const filename in files) {
+                if (filename.endsWith('.json') || filename === 'servers.json' || filename.includes('server')) {
+                    const fileContent = files[filename].content;
+                    try {
+                        serverData = JSON.parse(fileContent);
+                        break; // 找到第一个有效的JSON文件就停止
+                    } catch (error) {
+                        console.warn(`无法解析文件 ${filename}:`, error);
+                    }
+                }
+            }
+            
+            if (serverData) {
+                allServers = serverData.servers || serverData;
+                filteredServers = [...allServers];
+                
+                // 更新统计信息
+                updateStats({ servers: allServers });
+                
+                // 渲染服务器列表
+                renderServerList();
+                
+                // 更新最后更新时间（使用Gist的更新时间）
+                const updateTime = formatGithubTime(gistData.updated_at);
+                document.getElementById('last-update').textContent = updateTime;
+            } else {
+                throw new Error('未在Gist中找到有效的服务器数据');
+            }
+        })
+        .catch(error => {
+            console.error('从Gist加载服务器数据时出错:', error);
+            document.getElementById('server-list').innerHTML = 
+                '<div class="error-message">无法加载服务器数据。请稍后再试。</div>';
+            
+            // 尝试备用方案：直接使用 Gist 的 raw URL
+            loadServersFromRawGist();
+        });
+}
+
+// 备用方案：直接从 Gist 的 raw URL 加载数据
+function loadServersFromRawGist() {
+    // Gist raw URL - 直接获取文件内容
+    const gistRawUrl = `https://gist.githubusercontent.com/rpg636zjhi/${GIST_ID}/raw/servers.json`;
+    
+    fetch(gistRawUrl)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Gist raw URL响应不正常');
             }
             return response.json();
         })
         .then(data => {
-            allServers = data.servers;
+            allServers = data.servers || data;
             filteredServers = [...allServers];
             
             // 更新统计信息
-            updateStats(data);
+            updateStats({ servers: allServers });
             
             // 渲染服务器列表
             renderServerList();
+            
+            // 由于从raw URL加载，无法获取更新时间，显示当前时间
+            const now = new Date();
+            const formattedTime = now.toLocaleString('zh-CN');
+            document.getElementById('last-update').textContent = formattedTime + ' (本地时间)';
         })
         .catch(error => {
-            console.error('加载服务器数据时出错:', error);
+            console.error('从Gist raw URL加载服务器数据时出错:', error);
             document.getElementById('server-list').innerHTML = 
-                '<div class="error-message">无法加载服务器数据。请稍后再试。</div>';
+                '<div class="error-message">无法加载服务器数据。请检查网络连接或稍后再试。</div>';
         });
 }
 
@@ -52,18 +120,12 @@ function fetchGithubUpdateTime() {
             return response.json();
         })
         .then(data => {
-            const updateTime = data.updated_at;
-            const formattedTime = formatGithubTime(updateTime);
-            document.getElementById('last-update').textContent = formattedTime;
+            // 这里我们不再直接设置更新时间，因为已经从Gist获取了
+            // 但可以保留这个函数用于其他用途
+            console.log('GitHub仓库最后更新时间:', data.updated_at);
         })
         .catch(error => {
             console.error('获取GitHub更新时间时出错:', error);
-            document.getElementById('last-update').textContent = '获取失败';
-            
-            // 备用方案：使用当前时间
-            const now = new Date();
-            const formattedTime = now.toLocaleString('zh-CN');
-            document.getElementById('last-update').textContent = formattedTime + ' (本地时间)';
         });
 }
 
@@ -332,19 +394,13 @@ function filterServers() {
         // 筛选按钮筛选
         let matchesFilter = true;
         switch(activeFilter) {
-            case 'online':
-                matchesFilter = server.status === 'online';
-                break;
-            case 'offline':
-                matchesFilter = server.status === 'offline';
-                break;
             case 'survival':
                 matchesFilter = server.tags.includes('生存');
                 break;
             case 'creative':
                 matchesFilter = server.tags.includes('创造');
                 break;
-            case 'pvp':
+            case 'game':
                 matchesFilter = server.tags.includes('PVP');
                 break;
             // 'all' 不需要额外筛选
@@ -364,7 +420,7 @@ function formatTime(isoString) {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    // 懒得修Bug了，先这样吧
+    // 懒得修了
     if(diffMins < 60) {
         return date.toLocaleDateString('zh-CN');
     } else if (diffHours < 24) {
@@ -373,7 +429,6 @@ function formatTime(isoString) {
         return date.toLocaleDateString('zh-CN');
     } else {
         return date.toLocaleDateString('zh-CN');
-        
     }
 }
 
