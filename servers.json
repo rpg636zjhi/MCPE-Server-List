@@ -1,0 +1,34 @@
+{
+  "servers": [
+    {
+      "id": 1,
+      "name": "生存斧",
+      "ip": "axe.ink",
+      "port": 19132,
+      "version": "0.14.x",
+      "maxPlayers": 150,
+      "description": "在0.14经典的生存服务器",
+      "website": "https://www.axe.ink",
+      "lastUpdated": "2025-12-07T18:41:41Z",
+      "tags": [
+        "生存"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "生存斧小游戏",
+      "ip": "axe.ink",
+      "port": 19000,
+      "version": "0.12.x-0.15.x",
+      "maxPlayers": 100,
+      "description": "专注于MCPE版本的小游戏服务器",
+      "website": "https://www.axe.ink",
+      "lastUpdated": "2025-12-07T18:45:17Z",
+      "tags": [
+        "小游戏",
+        "11"
+      ]
+    }
+  ],
+  "totalServers": 2
+}
